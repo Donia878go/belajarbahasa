@@ -1,63 +1,55 @@
 import { NextResponse } from "next/server";
 
-// Pemetaan bahasa & file name untuk OneCompiler Engine
-const LANGUAGE_CONFIG: Record<string, { language: string; fileName: string }> = {
-  python: { language: "python", fileName: "main.py" },
-  javascript: { language: "nodejs", fileName: "main.js" },
-  c: { language: "c", fileName: "main.c" },
-  cpp: { language: "cpp", fileName: "main.cpp" },
-  java: { language: "java", fileName: "Main.java" },
-  pascal: { language: "pascal", fileName: "main.pas" },
-  go: { language: "go", fileName: "main.go" },
-  rust: { language: "rust", fileName: "main.rs" },
-  "basic.net": { language: "vb", fileName: "Main.vb" },
-  nasm64: { language: "assembly", fileName: "main.asm" }
+// ID bahasa resmi standar Judge0 Open Engine
+const JUDGE0_LANGUAGE_IDS: Record<string, number> = {
+  c: 50,          // C (GCC 9.2.0)
+  cpp: 54,        // C++ (GCC 9.2.0)
+  java: 62,       // Java (OpenJDK 13.0.1)
+  pascal: 67,     // Pascal (FPC 3.0.4)
+  go: 60,         // Go (1.13.5)
+  rust: 73,       // Rust (1.40.0)
+  nasm64: 45,     // Assembly (NASM 2.14.02)
+  "basic.net": 84 // Visual Basic.Net (vbnc 0.0.0.5943)
 };
 
 export async function POST(req: Request) {
   try {
     const { language, code } = await req.json();
+    const languageId = JUDGE0_LANGUAGE_IDS[language];
 
-    const config = LANGUAGE_CONFIG[language] || { language: "python", fileName: "main.py" };
+    if (!languageId) {
+      return NextResponse.json({
+        run: { output: `Bahasa ${language} tidak didukung pada compiler remote.` }
+      });
+    }
 
-    const response = await fetch("https://onecompiler.com/api/code/exec", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        name: config.language,
-        title: config.language,
-        version: "latest",
-        mode: config.language,
-        description: null,
-        extension: config.fileName.split(".").pop(),
-        language: config.language,
-        files: [
-          {
-            name: config.fileName,
-            content: code
-          }
-        ]
-      })
-    });
+    // Eksekusi kode synchronous via Judge0 Engine
+    const response = await fetch(
+      "https://ce.judge0.com/submissions?wait=true&base64_encoded=false",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          source_code: code,
+          language_id: languageId,
+          stdin: ""
+        })
+      }
+    );
 
     const data = await response.json();
 
     const stdout = data.stdout || "";
-    const stderr = data.stderr || data.exception || "";
-    const output = stdout || stderr || (data.status === "success" ? "Program selesai tanpa output." : "Eksekusi gagal.");
+    const stderr = data.stderr || "";
+    const compileOutput = data.compile_output || "";
+    const output = stdout || stderr || compileOutput || (data.status?.description === "Accepted" ? "Program selesai tanpa output." : data.status?.description || "Eksekusi gagal.");
 
     return NextResponse.json({
-      run: {
-        output: output,
-        stdout: stdout,
-        stderr: stderr
-      }
+      run: { output: output }
     });
   } catch (error) {
     return NextResponse.json(
-      { message: "Terjadi kesalahan pada server eksekusi", error: String(error) },
+      { run: { output: `Gagal terhubung ke engine: ${String(error)}` } },
       { status: 500 }
     );
   }

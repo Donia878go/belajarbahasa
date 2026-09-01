@@ -1,7 +1,14 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import Editor from "@monaco-editor/react";
+
+declare global {
+  interface Window {
+    loadPyodide?: any;
+    Babel?: any;
+  }
+}
 
 interface Exercise {
   title: string;
@@ -15,7 +22,7 @@ interface LanguageData {
   year: string;
   category: "Modern" | "Klasik & Retro";
   monacoLang: string;
-  pistonLang: string;
+  runner: "browser-py" | "browser-js" | "browser-ts" | "backend";
   description: string;
   features: string[];
   exercises: Exercise[];
@@ -28,14 +35,14 @@ const DATABASE: LanguageData[] = [
     year: "1991",
     category: "Modern",
     monacoLang: "python",
-    pistonLang: "python",
-    description: "Bahasa tingkat tinggi yang menekankan keterbacaan kode dengan sintaks yang bersih dan ekspresif. Sangat populer untuk Data Science, Web, dan Automasi.",
+    runner: "browser-py",
+    description: "Bahasa tingkat tinggi yang bersih dan ekspresif. Populer untuk Data Science, AI, dan Automasi. (Dijalankan via Pyodide WASM)",
     features: ["Dynamic Typing", "Garbage Collected", "Multi-paradigma"],
     exercises: [
       {
         title: "1. Variabel & Aritmatika",
         description: "Hitung luas segitiga dengan alas 12 dan tinggi 8.",
-        starterCode: `# Hitung luas segitiga (1/2 * alas * tinggi)\nalas = 12\ntinggi = 8\nluas = 0.5 * alas * tinggi\nprint(f"Luas segitiga: {luas}")`
+        starterCode: `alas = 12\ntinggi = 8\nluas = 0.5 * alas * tinggi\nprint(f"Luas segitiga: {luas}")`
       },
       {
         title: "2. Percabangan Kasir",
@@ -50,19 +57,14 @@ const DATABASE: LanguageData[] = [
     year: "1995",
     category: "Modern",
     monacoLang: "javascript",
-    pistonLang: "javascript",
-    description: "Bahasa pemrograman utama untuk web interaktif. Berjalan di browser dan server (Node.js).",
-    features: ["Event-Driven", "Non-blocking I/O", "Prototype-based"],
+    runner: "browser-js",
+    description: "Bahasa pemrograman utama web interaktif. Berjalan langsung di browser Anda.",
+    features: ["Event-Driven", "Non-blocking I/O", "Dynamic"],
     exercises: [
       {
         title: "1. Array & Perulangan",
         description: "Tampilkan setiap item array dengan awalan nomor urut.",
         starterCode: `const menu = ["Kopi", "Teh", "Roti Bakar"];\nmenu.forEach((item, index) => {\n  console.log(\`\${index + 1}. \${item}\`);\n});`
-      },
-      {
-        title: "2. Manipulasi Objek",
-        description: "Akses dan cetak data profil pengguna.",
-        starterCode: `const user = {\n  nama: "Doni",\n  peran: "Developer",\n  aktif: true\n};\n\nconsole.log(\`Nama: \${user.nama} (\${user.peran})\`);`
       }
     ]
   },
@@ -72,14 +74,14 @@ const DATABASE: LanguageData[] = [
     year: "1972",
     category: "Klasik & Retro",
     monacoLang: "c",
-    pistonLang: "c",
-    description: "Ibu dari banyak bahasa modern. Menawarkan performa maksimal dengan kontrol langsung ke memori komputer.",
-    features: ["Manual Memory Management", "Static Typing", "Compiled Native"],
+    runner: "backend",
+    description: "Bahasa legendaris karya Dennis Ritchie yang menjadi dasar sistem operasi UNIX dan bahasa modern.",
+    features: ["Direct Memory Access", "Pointers", "Fast Native"],
     exercises: [
       {
         title: "1. Program Halo Dunia C",
-        description: "Cetak format data angka dan teks standar.",
-        starterCode: `#include <stdio.h>\n\nint main() {\n    printf("Belajar Bahasa C Standar\\n");\n    int tahun = 1972;\n    printf("Dibuat oleh Dennis Ritchie tahun %d\\n", tahun);\n    return 0;\n}`
+        description: "Format pencetakan standar di C.",
+        starterCode: `#include <stdio.h>\n\nint main() {\n    printf("Halo dari Bahasa C Standar!\\n");\n    int tahun = 1972;\n    printf("Dibuat pada tahun %d\\n", tahun);\n    return 0;\n}`
       }
     ]
   },
@@ -89,14 +91,14 @@ const DATABASE: LanguageData[] = [
     year: "1985",
     category: "Modern",
     monacoLang: "cpp",
-    pistonLang: "cpp",
-    description: "Pengembangan dari bahasa C dengan dukungan Object-Oriented Programming (OOP) dan abstraksi modern berkecepatan tinggi.",
-    features: ["OOP Support", "Template Metaprogramming", "High Performance"],
+    runner: "backend",
+    description: "Ekstensi dari bahasa C dengan dukungan OOP, generic programming, dan performa tinggi.",
+    features: ["OOP", "Templates", "High Performance"],
     exercises: [
       {
-        title: "1. Vektor & Akumulasi",
-        description: "Hitung total angka menggunakan std::vector.",
-        starterCode: `#include <iostream>\n#include <vector>\n#include <numeric>\nusing namespace std;\n\nint main() {\n    vector<int> nilai = {10, 20, 30, 40};\n    int total = accumulate(nilai.begin(), nilai.end(), 0);\n    cout << "Total Nilai: " << total << endl;\n    return 0;\n}`
+        title: "1. Standar I/O C++",
+        description: "Mencetak teks menggunakan namespace std.",
+        starterCode: `#include <iostream>\nusing namespace std;\n\nint main() {\n    cout << "Selamat Datang di C++!" << endl;\n    return 0;\n}`
       }
     ]
   },
@@ -106,48 +108,14 @@ const DATABASE: LanguageData[] = [
     year: "1970",
     category: "Klasik & Retro",
     monacoLang: "pascal",
-    pistonLang: "pascal",
-    description: "Bahasa prosedural yang dirancang oleh Niklaus Wirth untuk mengajarkan struktur pemrograman yang disiplin dan rapi.",
-    features: ["Strongly Typed", "Structured Programming", "Keterbacaan Tinggi"],
+    runner: "backend",
+    description: "Bahasa pemrograman terstruktur era 70-90an yang sangat terkenal dalam pembelajaran akademis.",
+    features: ["Strong Typing", "Structured", "Readable"],
     exercises: [
       {
         title: "1. Perulangan For Pascal",
         description: "Cetak deret angka terstruktur.",
-        starterCode: `program DeretPascal;\nvar\n  i: integer;\nbegin\n  writeln('--- Deret Bilangan ---');\n  for i := 1 to 5 do\n    writeln('Langkah ke-', i);\nend.`
-      }
-    ]
-  },
-  {
-    id: "nasm64",
-    name: "Assembly (x86_64)",
-    year: "1950s/Modern",
-    category: "Klasik & Retro",
-    monacoLang: "plaintext",
-    pistonLang: "nasm64",
-    description: "Bahasa tingkat sangat rendah (low-level) yang berkomunikasi langsung dengan register CPU komputer via syscall.",
-    features: ["Direct Hardware Control", "No Abstraction", "Register-based"],
-    exercises: [
-      {
-        title: "1. Syscall Write NASM",
-        description: "Cetak string ke stdout menggunakan register rax, rdi, rsi, rdx.",
-        starterCode: `section .data\n    msg db "Halo dari CPU Machine Level!", 0x0A\n    len equ $ - msg\n\nsection .text\n    global _start\n\n_start:\n    mov rax, 1\n    mov rdi, 1\n    mov rsi, msg\n    mov rdx, len\n    syscall\n\n    mov rax, 60\n    xor rdi, rdi\n    syscall`
-      }
-    ]
-  },
-  {
-    id: "basic",
-    name: "Basic (VB.NET)",
-    year: "1964/1991",
-    category: "Klasik & Retro",
-    monacoLang: "vb",
-    pistonLang: "basic.net",
-    description: "Beginner's All-purpose Symbolic Instruction Code dirancang untuk kemudahan belajar logika dasar.",
-    features: ["English-like Syntax", "Mudah Dipelajari"],
-    exercises: [
-      {
-        title: "1. Modul Basic",
-        description: "Tampilkan teks dan kalkulasi sederhana.",
-        starterCode: `Imports System\n\nModule Program\n    Sub Main()\n        Console.WriteLine("Selamat Datang di Dunia BASIC")\n        Dim x As Integer = 50\n        Dim y As Integer = 25\n        Console.WriteLine("Hasil: " & (x + y))\n    End Sub\nEnd Module`
+        starterCode: `program DeretPascal;\nvar\n  i: integer;\nbegin\n  writeln('--- Deret Pascal ---');\n  for i := 1 to 5 do\n    writeln('Nomor: ', i);\nend.`
       }
     ]
   },
@@ -157,48 +125,31 @@ const DATABASE: LanguageData[] = [
     year: "1995",
     category: "Modern",
     monacoLang: "java",
-    pistonLang: "java",
-    description: "Bahasa berorientasi objek murni dengan filosofi 'Write Once, Run Anywhere' di atas JVM.",
-    features: ["Platform Independent (JVM)", "Strict OOP", "Enterprise Standard"],
+    runner: "backend",
+    description: "Bahasa berorientasi objek murni yang berjalan di atas Java Virtual Machine (JVM).",
+    features: ["Cross-Platform", "Strict OOP", "Robust"],
     exercises: [
       {
-        title: "1. Main Class & Loop",
-        description: "Cetak angka genap menggunakan perulangan Java.",
-        starterCode: `public class Main {\n    public static void main(String[] args) {\n        System.out.println("Deret Genap:");\n        for (int i = 2; i <= 10; i += 2) {\n            System.out.print(i + " ");\n        }\n        System.out.println();\n    }\n}`
+        title: "1. Kelas Utama Java",
+        description: "Struktur standar main class Java.",
+        starterCode: `public class Main {\n    public static void main(String[] args) {\n        System.out.println("Eksekusi Java Berhasil!");\n    }\n}`
       }
     ]
   },
   {
-    id: "go",
-    name: "Go (Golang)",
-    year: "2009",
-    category: "Modern",
-    monacoLang: "go",
-    pistonLang: "go",
-    description: "Bahasa modern buatan Google yang fokus pada kesederhanaan, kompilasi cepat, dan konkurensi (Goroutine).",
-    features: ["Built-in Concurrency", "Fast Compilation", "Minimalist"],
+    id: "nasm64",
+    name: "Assembly (x86_64)",
+    year: "Retro",
+    category: "Klasik & Retro",
+    monacoLang: "plaintext",
+    runner: "backend",
+    description: "Bahasa instruksi tingkat register prosesor.",
+    features: ["Low-Level", "Direct Hardware", "Syscalls"],
     exercises: [
       {
-        title: "1. Struct & Slices",
-        description: "Deklarasikan data item belanja.",
-        starterCode: `package main\nimport "fmt"\n\nfunc main() {\n    items := []string{"Buku", "Pulpen", "Penggaris"}\n    fmt.Printf("Total inventaris: %d item\\n", len(items))\n    for _, item := range items {\n        fmt.Println("- " + item)\n    }\n}`
-      }
-    ]
-  },
-  {
-    id: "rust",
-    name: "Rust",
-    year: "2015",
-    category: "Modern",
-    monacoLang: "rust",
-    pistonLang: "rust",
-    description: "Bahasa pemrograman sistem yang menjamin memory safety dan kebebasan thread tanpa menggunakan garbage collector.",
-    features: ["Ownership & Borrowing", "Zero-cost Abstractions", "Memory Safe"],
-    exercises: [
-      {
-        title: "1. Iterasi & Match",
-        description: "Kalkulasi nilai faktorial sederhana.",
-        starterCode: `fn main() {\n    let angka = 5;\n    let total: i32 = (1..=angka).product();\n    println!("Faktorial dari {} adalah {}", angka, total);\n}`
+        title: "1. Syscall Write NASM",
+        description: "Cetak string ke stdout.",
+        starterCode: `section .data\n    msg db "Halo dari CPU Assembly!", 0xa\n    len equ $ - msg\n\nsection .text\n    global _start\n\n_start:\n    mov edx, len\n    mov ecx, msg\n    mov ebx, 1\n    mov eax, 4\n    int 0x80\n\n    mov eax, 1\n    int 0x80`
       }
     ]
   }
@@ -210,6 +161,30 @@ export default function Home() {
   const [code, setCode] = useState(DATABASE[0].exercises[0].starterCode);
   const [output, setOutput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [pyodideReady, setPyodideReady] = useState(false);
+
+  const pyodideRef = useRef<any>(null);
+
+  // Inisialisasi Pyodide WASM untuk Python di browser
+  useEffect(() => {
+    if (!window.loadPyodide) {
+      const script = document.createElement("script");
+      script.src = "https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js";
+      script.async = true;
+      script.onload = async () => {
+        try {
+          const pyodide = await window.loadPyodide({
+            indexURL: "https://cdn.jsdelivr.net/pyodide/v0.25.0/full/"
+          });
+          pyodideRef.current = pyodide;
+          setPyodideReady(true);
+        } catch (e) {
+          console.error("Pyodide error:", e);
+        }
+      };
+      document.body.appendChild(script);
+    }
+  }, []);
 
   const handleLangChange = (lang: LanguageData) => {
     setSelectedLang(lang);
@@ -226,27 +201,63 @@ export default function Home() {
 
   const runCode = async () => {
     setIsLoading(true);
-    setOutput("Executing code...");
+    setOutput("Executing...");
 
+    // 1. Eksekusi Python di Browser (Pyodide)
+    if (selectedLang.runner === "browser-py") {
+      if (!pyodideRef.current) {
+        setOutput("⏳ Menyiapkan engine Python WASM di browser... Tunggu sebentar.");
+        setIsLoading(false);
+        return;
+      }
+      try {
+        let stdoutLogs: string[] = [];
+        pyodideRef.current.setStdout({
+          batched: (msg: string) => stdoutLogs.push(msg)
+        });
+        await pyodideRef.current.runPythonAsync(code);
+        setOutput(stdoutLogs.join("\n") || "Program selesai dieksekusi tanpa print output.");
+      } catch (err: any) {
+        setOutput(`❌ Error Python:\n${err.message}`);
+      } finally {
+        setIsLoading(false);
+      }
+      return;
+    }
+
+    // 2. Eksekusi JavaScript di Browser
+    if (selectedLang.runner === "browser-js") {
+      let logs: string[] = [];
+      const originalLog = console.log;
+      try {
+        console.log = (...args: any[]) => {
+          logs.push(args.map(a => (typeof a === "object" ? JSON.stringify(a) : String(a))).join(" "));
+        };
+        new Function(code)();
+        setOutput(logs.join("\n") || "Program selesai dieksekusi.");
+      } catch (err: any) {
+        setOutput(`❌ Error JS:\n${err.message}`);
+      } finally {
+        console.log = originalLog;
+        setIsLoading(false);
+      }
+      return;
+    }
+
+    // 3. Eksekusi Bahasa Lainnya via Judge0 Backend API
     try {
       const res = await fetch("/api/execute", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          language: selectedLang.pistonLang,
+          language: selectedLang.id,
           code: code
         })
       });
-
       const data = await res.json();
-      if (data.run) {
-        const out = data.run.stdout || data.run.stderr || data.run.output || "Program finished with no output.";
-        setOutput(out);
-      } else {
-        setOutput(data.message || "Failed to execute.");
-      }
+      setOutput(data.run?.output || "Program selesai dieksekusi.");
     } catch {
-      setOutput("Network Error: Gagal menghubungi server eksekusi.");
+      setOutput("❌ Gagal terhubung ke backend server.");
     } finally {
       setIsLoading(false);
     }
@@ -254,7 +265,6 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-[#121212] text-[#e0e0e0] font-mono flex flex-col">
-      {/* Top Header Classic */}
       <header className="h-14 border-b border-[#2c2c2c] px-6 flex items-center justify-between bg-[#181818]">
         <div className="flex items-center gap-3">
           <span className="text-base font-bold tracking-wider text-white">
@@ -265,7 +275,6 @@ export default function Home() {
           </span>
         </div>
 
-        {/* Language Selector */}
         <div className="flex items-center gap-4">
           <select
             value={selectedLang.id}
@@ -289,7 +298,7 @@ export default function Home() {
 
           <button
             onClick={runCode}
-            disabled={isLoading}
+            disabled={isLoading || (selectedLang.runner === "browser-py" && !pyodideReady)}
             className="bg-[#2e2e2e] hover:bg-[#3d3d3d] active:bg-[#444] disabled:opacity-50 text-[#fff] border border-[#444] px-4 py-1.5 text-xs font-semibold tracking-wide transition uppercase cursor-pointer"
           >
             {isLoading ? "[ Running... ]" : "[ ▶ Run Code ]"}
@@ -297,9 +306,8 @@ export default function Home() {
         </div>
       </header>
 
-      {/* Main 3-Column Layout */}
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 overflow-hidden">
-        {/* Kolom 1: Informasi Bahasa & Menu Latihan (3 cols) */}
+        {/* Kolom Info & Modul */}
         <div className="lg:col-span-3 border-r border-[#2c2c2c] bg-[#161616] p-5 flex flex-col gap-6 overflow-y-auto">
           <div>
             <div className="flex items-center justify-between border-b border-[#2c2c2c] pb-2 mb-3">
@@ -320,7 +328,6 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Menu Latihan Soal */}
           <div className="border-t border-[#2c2c2c] pt-4">
             <span className="text-[11px] font-bold text-[#888] uppercase tracking-wider block mb-3">
               Modul Latihan:
@@ -344,7 +351,7 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Kolom 2: Monaco Editor (5 cols) */}
+        {/* Kolom Editor */}
         <div className="lg:col-span-5 border-r border-[#2c2c2c] flex flex-col h-[50vh] lg:h-full bg-[#1e1e1e]">
           <div className="h-8 border-b border-[#2c2c2c] bg-[#181818] px-4 flex items-center justify-between text-[11px] text-[#777]">
             <span>EDITOR // {selectedLang.id.toUpperCase()}</span>
@@ -375,7 +382,7 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Kolom 3: Console Terminal Output (4 cols) */}
+        {/* Kolom Output Terminal */}
         <div className="lg:col-span-4 bg-[#141414] flex flex-col h-[40vh] lg:h-full">
           <div className="h-8 border-b border-[#2c2c2c] bg-[#181818] px-4 flex items-center justify-between text-[11px] text-[#777]">
             <span>TERMINAL_OUTPUT</span>
@@ -386,7 +393,7 @@ export default function Home() {
               [ Clear ]
             </button>
           </div>
-          <pre className="flex-1 p-4 font-mono text-xs text-[#cfcfcf] overflow-auto whitespace-pre-wrap leading-relaxed selection:bg-[#444]">
+          <pre className="flex-1 p-4 font-mono text-xs text-[#cfcfcf] overflow-auto whitespace-pre-wrap leading-relaxed">
             {output || "// Output terminal akan tampil di sini..."}
           </pre>
         </div>
