@@ -1,99 +1,204 @@
 "use client";
 
-import React, { useState } from "react";
-import { DATABASE_BAHASA, LanguageSpec } from "@/data/languages";
-import { Header } from "@/components/Header";
-import { Sidebar } from "@/components/Sidebar";
-import { ColabEditorCell } from "@/components/ColabEditorCell";
+import React, { useState, useEffect, useCallback } from "react";
+import confetti from "canvas-confetti";
+import { CURRICULUM_DATA } from "@/data/curriculum";
+import { LanguageTrack, CurriculumModule, UserProgress } from "@/types/curriculum";
+import { sfx } from "@/utils/audio";
+import { Navbar } from "@/components/Navbar";
+import { SidebarTrack } from "@/components/SidebarTrack";
+import { EditorPane } from "@/components/EditorPane";
+import { Footer } from "@/components/Footer";
 
 export default function Home() {
-  const [selectedLang, setSelectedLang] = useState<LanguageSpec>(DATABASE_BAHASA[0]);
-  const [selectedModIndex, setSelectedModIndex] = useState(0);
-  const [code, setCode] = useState(DATABASE_BAHASA[0].modules[0].code);
-  const [output, setOutput] = useState("");
-  const [debugLog, setDebugLog] = useState("Runtime Colab Environment: Ready (CPU: 2 Cores | RAM: 12GB)");
-  const [activeTab, setActiveTab] = useState<"output" | "debug">("output");
-  const [isLoading, setIsLoading] = useState(false);
-  const [executionTime, setExecutionTime] = useState<string | null>(null);
+  const [selectedTrack, setSelectedTrack] = useState<LanguageTrack>(CURRICULUM_DATA[0]);
+  const [activeModule, setActiveModule] = useState<CurriculumModule>(CURRICULUM_DATA[0].modules[0]);
+  const [code, setCode] = useState<string>(CURRICULUM_DATA[0].modules[0].initialCode);
+  const [output, setOutput] = useState<string>("");
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
+  const [evalStatus, setEvalStatus] = useState<"idle" | "pass" | "fail">("idle");
+  const [progress, setProgress] = useState<UserProgress>({});
+  
+  // Mobile Responsiveness Tab Navigation
+  const [mobileTab, setMobileTab] = useState<"kurikulum" | "editor">("editor");
 
-  const handleLangChange = (lang: LanguageSpec) => {
-    setSelectedLang(lang);
-    setSelectedModIndex(0);
-    setCode(lang.modules[0].code);
-    setOutput("");
-    setExecutionTime(null);
-    setDebugLog(`Loaded kernel for ${lang.name} (${lang.year})`);
+  // Inisialisasi LocalStorage Progress
+  useEffect(() => {
+    const saved = localStorage.getItem("belajarbahasa_progress");
+    if (saved) {
+      try {
+        setProgress(JSON.parse(saved));
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  }, []);
+
+  const saveProgress = (trackId: string, moduleId: string) => {
+    setProgress((prev) => {
+      const currentTrackModules = prev[trackId] || [];
+      if (!currentTrackModules.includes(moduleId)) {
+        const updated = { ...prev, [trackId]: [...currentTrackModules, moduleId] };
+        localStorage.setItem("belajarbahasa_progress", JSON.stringify(updated));
+        return updated;
+      }
+      return prev;
+    });
   };
 
-  const handleModuleSelect = (index: number) => {
-    setSelectedModIndex(index);
-    setCode(selectedLang.modules[index].code);
+  const handleSelectTrack = (track: LanguageTrack) => {
+    setSelectedTrack(track);
+    setActiveModule(track.modules[0]);
+    setCode(track.modules[0].initialCode);
     setOutput("");
-    setExecutionTime(null);
+    setEvalStatus("idle");
   };
 
-  const runCode = async () => {
+  const handleSelectModule = (mod: CurriculumModule) => {
+    setActiveModule(mod);
+    setCode(mod.initialCode);
+    setOutput("");
+    setEvalStatus("idle");
+  };
+
+  // Eksekusi Kode & Evaluasi Otomatis
+  const executeCode = useCallback(async () => {
     setIsLoading(true);
-    setOutput("Executing cell in cloud sandbox...");
-    const tStart = performance.now();
+    setEvalStatus("idle");
+    setOutput("Mengirim ke backend compiler & mengevaluasi...");
 
     try {
       const res = await fetch("/api/execute", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          language: selectedLang.id,
+          language: selectedTrack.id,
           code: code,
         }),
       });
 
       const data = await res.json();
-      const tEnd = performance.now();
-      setExecutionTime(`${((tEnd - tStart) / 1000).toFixed(2)}s`);
-      setOutput(data.run?.output || "Cell execution completed.");
-      setDebugLog(`[Kernel Response]: ${data.debug || "Status 200 OK"}`);
-    } catch (err: any) {
-      setOutput("[Kernel Crash]: Gagal menghubungi server eksekusi.");
-      setDebugLog(`[Exception]: ${err.message}`);
+      const rawOutput = (data.run?.output || "").trim();
+      setOutput(rawOutput || "Program selesai dieksekusi tanpa output.");
+
+      // Evaluasi kesesuaian output
+      const expected = activeModule.expectedOutput.trim();
+      if (rawOutput === expected) {
+        setEvalStatus("pass");
+        sfx.playSuccess();
+        saveProgress(selectedTrack.id, activeModule.id);
+
+        // Micro-celebration Confetti
+        confetti({
+          particleCount: 50,
+          spread: 60,
+          origin: { y: 0.8 },
+        });
+      } else {
+        setEvalStatus("fail");
+        sfx.playError();
+      }
+    } catch {
+      setOutput("Gagal terhubung ke remote execution server.");
+      setEvalStatus("fail");
+      sfx.playError();
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [code, selectedTrack, activeModule]);
+
+  // Listener Pintasan Keyboard Ctrl + Enter
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+        e.preventDefault();
+        executeCode();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [executeCode]);
+
+  const completedTrackIds = progress[selectedTrack.id] || [];
+  const percentCompleted = Math.round(
+    (completedTrackIds.length / selectedTrack.modules.length) * 100
+  );
 
   return (
-    <div className="min-h-screen bg-[#faf8f5] text-[#2d2d2d] font-sans flex flex-col selection:bg-[#fae29c]">
-      <Header
-        languages={DATABASE_BAHASA}
-        selectedLang={selectedLang}
-        onSelectLang={handleLangChange}
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-emerald-500/20 selection:text-emerald-300">
+      <Navbar
+        tracks={CURRICULUM_DATA}
+        selectedTrack={selectedTrack}
+        onSelectTrack={handleSelectTrack}
+        soundEnabled={soundEnabled}
+        onToggleSound={() => {
+          setSoundEnabled(!soundEnabled);
+          sfx.enabled = !soundEnabled;
+        }}
+        overallProgress={percentCompleted}
       />
 
-      <main className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-5 p-5 max-w-[1600px] w-full mx-auto overflow-hidden">
-        <Sidebar
-          selectedLang={selectedLang}
-          selectedModIndex={selectedModIndex}
-          onSelectModule={handleModuleSelect}
-        />
+      {/* Mobile Tab Toggle */}
+      <div className="flex md:hidden border-b border-slate-800 bg-slate-900/60 p-1">
+        <button
+          onClick={() => setMobileTab("kurikulum")}
+          className={`flex-1 py-1.5 text-xs font-bold rounded-md transition ${
+            mobileTab === "kurikulum" ? "bg-slate-800 text-emerald-400" : "text-slate-400"
+          }`}
+        >
+          Kurikulum & Soal
+        </button>
+        <button
+          onClick={() => setMobileTab("editor")}
+          className={`flex-1 py-1.5 text-xs font-bold rounded-md transition ${
+            mobileTab === "editor" ? "bg-slate-800 text-emerald-400" : "text-slate-400"
+          }`}
+        >
+          Editor & Output
+        </button>
+      </div>
 
-        <ColabEditorCell
-          selectedLang={selectedLang}
-          currentMod={selectedLang.modules[selectedModIndex]}
-          code={code}
-          output={output}
-          debugLog={debugLog}
-          activeTab={activeTab}
-          isLoading={isLoading}
-          executionTime={executionTime}
-          onChangeCode={setCode}
-          onResetCode={() => setCode(selectedLang.modules[selectedModIndex].code)}
-          onRunCode={runCode}
-          onTabChange={setActiveTab}
-          onClearOutput={() => {
-            if (activeTab === "output") setOutput("");
-            else setDebugLog("Kernel logs cleared.");
-          }}
-        />
+      {/* Workspace Grid */}
+      <main className="flex-1 grid grid-cols-1 md:grid-cols-12 overflow-hidden min-h-[calc(100vh-4rem-140px)]">
+        {/* Sidebar Track Left */}
+        <div
+          className={`${
+            mobileTab === "kurikulum" ? "block" : "hidden"
+          } md:block md:col-span-4 lg:col-span-3 h-full`}
+        >
+          <SidebarTrack
+            track={selectedTrack}
+            activeModule={activeModule}
+            completedIds={completedTrackIds}
+            onSelectModule={(mod) => {
+              handleSelectModule(mod);
+              setMobileTab("editor");
+            }}
+          />
+        </div>
+
+        {/* Editor & Console Right */}
+        <div
+          className={`${
+            mobileTab === "editor" ? "block" : "hidden"
+          } md:block md:col-span-8 lg:col-span-9 h-full`}
+        >
+          <EditorPane
+            monacoLang={selectedTrack.monacoLang}
+            activeModule={activeModule}
+            code={code}
+            onChangeCode={setCode}
+            onResetCode={() => setCode(activeModule.initialCode)}
+            onRunCode={executeCode}
+            isLoading={isLoading}
+            evalStatus={evalStatus}
+            output={output}
+          />
+        </div>
       </main>
+
+      <Footer />
     </div>
   );
 }
