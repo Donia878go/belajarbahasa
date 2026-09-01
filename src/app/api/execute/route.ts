@@ -1,44 +1,55 @@
 import { NextResponse } from "next/server";
 
+// Pemetaan bahasa ke compiler Wandbox API (Gratis & Terbuka)
+const COMPILER_MAP: Record<string, string> = {
+  python: "cpython-head",
+  javascript: "nodejs-head",
+  c: "gcc-head-c",
+  cpp: "gcc-head",
+  java: "openjdk-head",
+  pascal: "fpc-head",
+  go: "go-head",
+  rust: "rust-head",
+  perl: "perl-head",
+  ruby: "ruby-head",
+  nasm64: "gcc-head", // via gcc assembly
+  "basic.net": "mono-head"
+};
+
 export async function POST(req: Request) {
   try {
     const { language, code } = await req.json();
 
-    // Penamaan file sesuai kebutuhan compiler tiap bahasa
-    let filename = "main.txt";
-    if (language === "python") filename = "main.py";
-    else if (language === "javascript") filename = "main.js";
-    else if (language === "c") filename = "main.c";
-    else if (language === "cpp") filename = "main.cpp";
-    else if (language === "java") filename = "Main.java";
-    else if (language === "pascal") filename = "main.pas";
-    else if (language === "go") filename = "main.go";
-    else if (language === "rust") filename = "main.rs";
-    else if (language === "nasm64") filename = "main.asm";
-    else if (language === "basic.net") filename = "main.vb";
+    const compiler = COMPILER_MAP[language] || "cpython-head";
 
-    const response = await fetch("https://emkc.org/api/v2/piston/execute", {
+    const response = await fetch("https://wandbox.org/api/compile.json", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        language: language,
-        version: "*",
-        files: [
-          {
-            name: filename,
-            content: code,
-          },
-        ],
+        compiler: compiler,
+        code: code,
       }),
     });
 
     const data = await response.json();
-    return NextResponse.json(data);
+
+    // Format output terminal dari Wandbox
+    const stdout = data.program_output || "";
+    const stderr = data.compiler_error || data.program_error || "";
+    const output = stdout || stderr || "Program selesai dieksekusi tanpa output.";
+
+    return NextResponse.json({
+      run: {
+        output: output,
+        stdout: stdout,
+        stderr: stderr,
+      },
+    });
   } catch (error) {
     return NextResponse.json(
-      { message: "Terjadi kesalahan pada server", error: String(error) },
+      { message: "Terjadi kesalahan server eksekusi", error: String(error) },
       { status: 500 }
     );
   }
